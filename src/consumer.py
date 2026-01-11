@@ -4,7 +4,6 @@ Subscribes to Kafka topic 'email-updates' and processes events in real-time
 """
 
 import json
-import signal
 import sys
 from kafka import KafkaConsumer
 from kafka.errors import KafkaError
@@ -13,16 +12,6 @@ from kafka.errors import KafkaError
 KAFKA_BOOTSTRAP_SERVERS = 'localhost:9092'
 TOPIC_NAME = 'email-updates'
 CONSUMER_GROUP = 'email-processor-group'
-
-# Track running state for graceful shutdown
-running = True
-
-
-def handle_shutdown(signum, frame):
-    """Handle Ctrl+C gracefully"""
-    global running
-    print("\n🛑 Shutdown signal received...")
-    running = False
 
 
 def process_email_event(event):
@@ -58,12 +47,6 @@ def process_email_event(event):
 
 
 def main():
-    global running
-    
-    # Register signal handlers for graceful shutdown
-    signal.signal(signal.SIGINT, handle_shutdown)
-    signal.signal(signal.SIGTERM, handle_shutdown)
-    
     print("=" * 50)
     print("📧 Email Update Event Consumer")
     print("=" * 50)
@@ -76,9 +59,8 @@ def main():
             bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
             group_id=CONSUMER_GROUP,
             value_deserializer=lambda m: json.loads(m.decode('utf-8')),
-            auto_offset_reset='earliest',  # Read from beginning if no offset
-            enable_auto_commit=True,
-            consumer_timeout_ms=1000  # Timeout to allow checking running flag
+            auto_offset_reset='earliest',
+            enable_auto_commit=True
         )
         print("✅ Connected to Kafka successfully!")
         print(f"✅ Subscribed to topic: '{TOPIC_NAME}'")
@@ -95,23 +77,15 @@ def main():
     event_count = 0
     
     try:
-        while running:
-            # Poll for messages with a timeout
-            try:
-                for message in consumer:
-                    if not running:
-                        break
-                    
-                    event = message.value
-                    event_count += 1
-                    
-                    print(f"--- Event #{event_count} (Partition: {message.partition}, Offset: {message.offset}) ---")
-                    process_email_event(event)
-                    
-            except StopIteration:
-                # Timeout reached, continue loop to check running flag
-                continue
+        for message in consumer:
+            event = message.value
+            event_count += 1
+            
+            print(f"--- Event #{event_count} (Partition: {message.partition}, Offset: {message.offset}) ---")
+            process_email_event(event)
                 
+    except KeyboardInterrupt:
+        print("\n🛑 Shutdown signal received...")
     except Exception as e:
         print(f"❌ Error: {e}")
     finally:
